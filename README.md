@@ -1,16 +1,17 @@
 # Lerd GitHub Actions runner
 
-A persistent, repository scoped Actions runner managed as a Lerd custom service,
-with a private Docker daemon supervised by a Lerd host worker. Version one targets
-Linux x64, rootless Podman, systemd user services, and trusted private repositories.
+A persistent, organization scoped Actions runner managed as one shared Lerd custom
+service, with a private Docker daemon supervised by a Lerd host worker. Version one
+targets Linux x64, rootless Podman, systemd user services, and trusted private repositories.
 
 Install and deploy the `lerd-add-actions-runner` skill from this repository, then
-invoke it in the target project. It discovers the Lerd site and GitHub origin,
-installs the `github-actions-runner` preset, adds a site scoped worker, and merges
-an opt in smoke workflow. Existing workflows stay as they are.
+invoke it in one Lerd host project. It installs the single `gh-runner` service and
+host worker, registers the runner with the GitHub organization, and adds only
+explicitly selected private repositories to a restricted runner group. Existing
+workflows stay as they are; each repo opts in with the `lerd-<org>` runner label.
 
 The service has no ports and stores runner credentials and job state in
-`~/.local/share/lerd/data/github-actions-runner/`. The short lived registration
+`~/.local/share/lerd/data/gh-runner/`. The short lived registration
 token is read from stdin and is not written to disk or printed. GitHub runner
 credentials stay in the private data directory after registration.
 
@@ -25,7 +26,7 @@ mounts the host Docker or Podman socket. Do not run untrusted code on this runne
 Stop the Lerd worker to pause jobs. Do not remove service data unless you intend
 to remove runner credentials and workspace.
 
-Use `scripts/runnerctl remove <owner>/<repo>` from the project root to revoke
+Use `scripts/runnerctl remove --org <org>` from the runner host project to revoke
 the matching GitHub registration and remove its local runner credentials. The
 workspace and private Docker data remain in place; purge them separately only
 when explicitly requested.

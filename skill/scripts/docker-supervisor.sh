@@ -10,7 +10,7 @@ readonly data="${XDG_DATA_HOME:-$HOME/.local/share}/lerd/data/${name}"
 readonly daemon_data="${XDG_DATA_HOME:-$HOME/.local/share}/lerd/data/${name}-dind"
 readonly image="${LERD_DIND_IMAGE:-docker:29-dind@sha256:4c42359ca23de31b73b7a58396a9ca1f3b9c8e0ffbb309f34c3b14c12d889d69}"
 last_runner_id=
-mkdir -p "$daemon_data"
+mkdir -p "$daemon_data" "$data/_work" "$data/tmp"
 cleanup() { podman rm --force "$sidecar" >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
 while :; do
@@ -25,7 +25,7 @@ while :; do
       cleanup
       podman run --detach --privileged --name "$sidecar" --network "container:$container" \
         --hostname "$sidecar" --env DOCKER_TLS_CERTDIR= --label "lerd-runner-id=$runner_id" --volume "$daemon_data:/var/lib/docker:Z" \
-        --volume "$data:/runner-data:Z" --volume "$data/tmp:/tmp:Z" \
+        --volume "$data/_work:/runner-data/_work:z" --volume "$data/tmp:/runner-data/tmp:z" \
         --cpus "${LERD_DIND_CPUS:-2}" --memory "${LERD_DIND_MEMORY:-4g}" --entrypoint dockerd "$image" \
         --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --tls=false --storage-driver=vfs
     fi

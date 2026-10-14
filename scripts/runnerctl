@@ -1,12 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 set +x
-readonly service="${LERD_RUNNER_SERVICE:-github-actions-runner}"
+readonly service="${LERD_RUNNER_SERVICE:-gh-runner}"
 readonly container="lerd-${service}"
-readonly worker="${LERD_RUNNER_WORKER:-docker}"
+readonly worker="${LERD_RUNNER_WORKER:-docker-gh-runner}"
 trap 'unset token' EXIT
 [[ "$service" =~ ^[a-z0-9][a-z0-9-]*$ && "$worker" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "invalid Lerd service or worker name" >&2; exit 2; }
-usage() { printf 'Usage: %s {status|register OWNER/REPO|remove OWNER/REPO|start|stop}\n' "$0" >&2; exit 2; }
+usage() { printf 'Usage: %s {status|register --org ORG OWNER/REPO|remove --org ORG|start|stop}\n' "$0" >&2; exit 2; }
+require_org_repo() {
+  [[ "$org" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ && "$owner_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || usage
+  [[ "${owner_repo%%/*}" == "$org" ]] || { echo "repository must belong to organization $org" >&2; exit 2; }
+}
+ensure_private_runner_group() {
+  group_json=$(gh api "orgs/$org/actions/runner-groups" --jq '.runner_groups[] | select(.name == "lerd-private")' 2>/dev/null || true)
+  if [[ -z "$group_json" ]]; then
+    group_json=$(gh api --method POST "orgs/$org/actions/runner-groups" \
+      -f name=lerd-private -f visibility=selected -F allows_public_repositories=false -F restricted_to_workflows=false)
+  fi
+  visibility=$(jq -r '.visibility' <<<"$group_json")
+  allows_public=$(jq -r '.allows_public_repositories' <<<"$group_json")
+  group_id=$(jq -r '.id' <<<"$group_json")
+  [[ "$visibility" == selected && "$allows_public" == false && "$group_id" =~ ^[0-9]+$ ]] || {
+    echo "runner group lerd-private must use selected repositories and exclude public repositories" >&2
+    exit 1
+  }
+  repository_id=$(gh api "repos/$owner_repo" --jq '.id')
+  [[ "$repository_id" =~ ^[0-9]+$ ]] || { echo "could not resolve repository id" >&2; exit 1; }
+  repository_ids=()
+  existing_repository_ids=$(gh api --paginate "orgs/$org/actions/runner-groups/$group_id/repositories" --jq '.repositories[]?.id')
+  while IFS= read -r id; do
+    [[ "$id" =~ ^[0-9]+$ ]] && repository_ids+=("$id")
+  done <<<"$existing_repository_ids"
+  local found=false
+  for id in "${repository_ids[@]}"; do [[ "$id" == "$repository_id" ]] && found=true; done
+  if [[ "$found" != true ]]; then repository_ids+=("$repository_id"); fi
+  api_args=(--method PUT "orgs/$org/actions/runner-groups/$group_id/repositories")
+  for id in "${repository_ids[@]}"; do api_args+=(-F "selected_repository_ids[]=$id"); done
+  gh api "${api_args[@]}" >/dev/null
+  printf '%s\n' "$group_id"
+}
 case "${1:-}" in
   status)
     lerd service list
@@ -15,22 +47,42 @@ case "${1:-}" in
     podman ps --filter 'name=lerd-actions-runner-' --format '{{.Names}} {{.Status}}'
     ;;
   register)
-    [[ $# == 2 ]] || usage
-    if ! command -v gh >/dev/null; then echo "gh is required; authenticate it for the repository first" >&2; exit 2; fi
+    [[ $# == 4 && "$2" == --org ]] || usage
+    org=$3
+    owner_repo=$4
+    require_org_repo
     gh auth status >/dev/null
-    owner_repo=$2
-    [[ "$owner_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || usage
-    token=$(gh api --method POST "repos/$owner_repo/actions/runners/registration-token" --jq .token)
+    ensure_private_runner_group >/dev/null
+    repo_json=$(gh api "repos/$owner_repo")
+    [[ "$(jq -r '.private' <<<"$repo_json")" == true ]] || { echo "only private repositories can join lerd-private" >&2; exit 1; }
+    runner_name=$(awk '$1 == "RUNNER_NAME:" { print $2; exit }' "${XDG_CONFIG_HOME:-$HOME/.config}/lerd/services/$service.yaml")
+    [[ -n "$runner_name" ]] || { echo "runner name is missing from the shared service definition" >&2; exit 1; }
+    existing=$(gh api "orgs/$org/actions/runners" --jq ".runners[] | select(.name == \"$runner_name\") | .id" 2>/dev/null || true)
+    if [[ -n "$existing" ]]; then
+      data_dir="${XDG_DATA_HOME:-$HOME/.local/share}/lerd/data/$service/state"
+      [[ -s "$data_dir/.runner" ]] || { echo "GitHub already has $runner_name but this host has no matching registration; refusing replacement" >&2; exit 1; }
+      registered_name=$(jq -r '.agentName' "$data_dir/.runner")
+      registered_url=$(jq -r '.gitHubUrl' "$data_dir/.runner")
+      [[ "$registered_name" == "$runner_name" && "${registered_url%/}" == "https://github.com/$org" ]] || {
+        echo "GitHub runner name conflicts with a different local registration; refusing replacement" >&2
+        exit 1
+      }
+      echo "shared runner $runner_name is already registered for $org"
+      exit 0
+    fi
+    token=$(gh api --method POST "orgs/$org/actions/runners/registration-token" --jq .token)
     [[ -n "$token" ]] || { echo "GitHub returned no registration token" >&2; exit 1; }
-    if ! printf '%s\n' "$token" | podman exec --interactive "$container" /usr/local/bin/lerd-runner-entrypoint register >/dev/null 2>&1; then echo "runner registration failed; inspect Lerd service logs" >&2; exit 1; fi
+    if ! printf '%s\n' "$token" | podman exec --interactive "$container" /usr/local/bin/lerd-runner-entrypoint register >/dev/null 2>&1; then
+      echo "runner registration failed; inspect Lerd service logs" >&2
+      exit 1
+    fi
     unset token
     ;;
   remove)
-    [[ $# == 2 ]] || usage
-    if ! command -v gh >/dev/null; then echo "gh is required; authenticate it for the repository first" >&2; exit 2; fi
+    [[ $# == 3 && "$2" == --org ]] || usage
+    org=$3
+    [[ "$org" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]] || usage
     gh auth status >/dev/null
-    owner_repo=$2
-    [[ "$owner_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || usage
     data_dir="${XDG_DATA_HOME:-$HOME/.local/share}/lerd/data/$service"
     [[ -d "$data_dir" && ! -L "$data_dir" ]] || { echo "runner data directory is missing; refusing removal" >&2; exit 1; }
     data_dir=$(realpath -e -- "$data_dir")
@@ -39,12 +91,14 @@ case "${1:-}" in
     runner_file="$data_dir/state/.runner"
     [[ -s "$runner_file" && ! -L "$runner_file" ]] || { echo "runner registration is missing; refusing removal" >&2; exit 1; }
     runner_name=$(jq -r '.agentName' "$runner_file")
-    [[ -n "$runner_name" && "$runner_name" != null ]] || { echo "runner registration is missing; refusing removal" >&2; exit 1; }
     server_url=$(jq -r '.gitHubUrl' "$runner_file")
-    [[ "${server_url%/}" == "https://github.com/$owner_repo" ]] || { echo "local runner belongs to another repository; refusing removal" >&2; exit 1; }
-    runner_id=$(gh api "repos/$owner_repo/actions/runners" --jq ".runners[] | select(.name == \"$runner_name\") | .id" 2>/dev/null)
+    [[ -n "$runner_name" && "$runner_name" != null && "${server_url%/}" == "https://github.com/$org" ]] || {
+      echo "local runner does not match organization $org; refusing removal" >&2
+      exit 1
+    }
+    runner_id=$(gh api "orgs/$org/actions/runners" --jq ".runners[] | select(.name == \"$runner_name\") | .id" 2>/dev/null)
     [[ -n "$runner_id" ]] || { echo "matching GitHub runner was not found; refusing removal" >&2; exit 1; }
-    token=$(gh api --method POST "repos/$owner_repo/actions/runners/remove-token" --jq .token)
+    token=$(gh api --method POST "orgs/$org/actions/runners/remove-token" --jq .token)
     [[ -n "$token" ]] || { echo "GitHub returned no removal token" >&2; exit 1; }
     image=$(podman inspect --format '{{.ImageName}}' "$container" 2>/dev/null || true)
     if [[ -z "$image" ]]; then

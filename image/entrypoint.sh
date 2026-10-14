@@ -15,7 +15,9 @@ if [[ "${1:-run}" == register ]]; then
   IFS= read -r token || true
   [[ -n "${token:-}" ]] || { echo "registration token is required on stdin" >&2; exit 2; }
   chmod 700 "$state"
-  ./config.sh --unattended --url "$RUNNER_URL" --token "$token" --name "$RUNNER_NAME" --labels "${RUNNER_LABELS:-lerd}" --work "$work" --disableupdate >/dev/null
+  runner_args=(--unattended --url "$RUNNER_URL" --token "$token" --name "$RUNNER_NAME" --labels "${RUNNER_LABELS:-lerd}" --work "$work" --disableupdate)
+  if [[ -n "${RUNNER_GROUP:-}" ]]; then runner_args+=(--runnergroup "$RUNNER_GROUP"); fi
+  ./config.sh "${runner_args[@]}" >/dev/null
   unset token
   for name in "${runner_files[@]}"; do
     [[ -f "/opt/actions-runner/$name" ]] || { echo "registration omitted $name" >&2; exit 1; }

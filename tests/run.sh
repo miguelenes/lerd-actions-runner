@@ -23,9 +23,9 @@ PY
 # The service renderer is idempotent and refuses to overwrite a local edit.
 mkdir -p "$tmp/bin"
 output="$tmp/github-actions-runner-test.yaml"
-"$root/scripts/render-site-service.sh" test desktop-pc owner/repo "$output" >/dev/null
+"$root/scripts/render-site-service.sh" illuma-law local-linux "$output" >/dev/null
 before=$(sha256sum "$output")
-"$root/scripts/render-site-service.sh" test desktop-pc owner/repo "$output" >/dev/null
+"$root/scripts/render-site-service.sh" illuma-law local-linux "$output" >/dev/null
 [[ "$before" == "$(sha256sum "$output")" ]]
 echo '# operator edit' >>"$output"
 if "$root/scripts/render-site-service.sh" test desktop-pc owner/repo "$output" >/dev/null 2>&1; then
@@ -34,36 +34,62 @@ if "$root/scripts/render-site-service.sh" test desktop-pc owner/repo "$output" >
 fi
 grep -q '# operator edit' "$output"
 
-# The registration helper streams its fixture token on stdin, never argv.
+# Organization registration creates a selected-only private runner group,
+# preserves its existing repository members, and streams the token on stdin.
 cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 [[ "$1" == auth ]] && exit 0
-[[ "$1" == api ]] && { printf '%s\n' 'fixture-registration-token'; exit 0; }
-exit 1
+if [[ "$1" == api && "$2" == orgs/illuma-law/actions/runner-groups ]]; then exit 0; fi
+if [[ "$1" == api && "$2" == --method && "$3" == POST && "$4" == orgs/illuma-law/actions/runner-groups ]]; then
+  printf '{"id":9,"visibility":"selected","allows_public_repositories":false}\n'
+elif [[ "$1" == api && "$2" == repos/illuma-law/lerd-actions-runner-validation ]]; then
+  if [[ " $* " == *" --jq .id "* ]]; then printf '100\n'; else printf '{"id":100,"private":true}\n'; fi
+elif [[ "$1" == api && "$2" == --paginate && "$3" == orgs/illuma-law/actions/runner-groups/9/repositories ]]; then
+  printf '42\n'
+elif [[ "$1" == api && "$2" == --method && "$3" == PUT && "$4" == orgs/illuma-law/actions/runner-groups/9/repositories ]]; then
+  printf '%s\n' "$*" >>"$GH_CALLS"
+elif [[ "$1" == api && "$2" == orgs/illuma-law/actions/runners ]]; then
+  exit 0
+elif [[ "$1" == api && "$2" == --method && "$3" == POST && "$4" == orgs/illuma-law/actions/runners/registration-token ]]; then
+  printf '%s\n' 'fixture-registration-token'
+else
+  exit 1
+fi
+exit 0
 GH
 cat >"$tmp/bin/podman" <<'PODMAN'
 #!/usr/bin/env bash
 for arg in "$@"; do
   [[ "$arg" == 'fixture-registration-token' ]] && exit 31
 done
+[[ "$1" == exec && "$2" == --interactive && "$3" == lerd-gh-runner ]] || exit 32
 read -r incoming
 [[ "$incoming" == "$EXPECTED_TOKEN" ]]
 PODMAN
 chmod +x "$tmp/bin/gh" "$tmp/bin/podman"
-PATH="$tmp/bin:$PATH" EXPECTED_TOKEN=fixture-registration-token \
-  LERD_RUNNER_SERVICE=github-actions-runner-test \
-  "$root/scripts/runnerctl" register owner/repo >"$tmp/register.out" 2>"$tmp/register.err"
+mkdir -p "$tmp/config/lerd/services"
+cat >"$tmp/config/lerd/services/gh-runner.yaml" <<'YAML'
+environment:
+  RUNNER_NAME: lerd-gh-runner-local-linux
+YAML
+: >"$tmp/gh-calls.log"
+PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/config" GH_CALLS="$tmp/gh-calls.log" \
+  EXPECTED_TOKEN=fixture-registration-token LERD_RUNNER_SERVICE=gh-runner \
+  "$root/scripts/runnerctl" register --org illuma-law illuma-law/lerd-actions-runner-validation \
+  >"$tmp/register.out" 2>"$tmp/register.err"
 [[ ! -s "$tmp/register.out" && ! -s "$tmp/register.err" ]]
+grep -q 'selected_repository_ids\[\]=42' "$tmp/gh-calls.log"
+grep -q 'selected_repository_ids\[\]=100' "$tmp/gh-calls.log"
 
-# Removal requires a matching registered runner, streams its short-lived token,
-# stops the Lerd units, and leaves the local data volumes intact.
+# Organization removal validates the matching registration, streams its token,
+# stops the Lerd units, and leaves local data in place.
 cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 [[ "$1" == auth ]] && exit 0
-if [[ "$1" == api && "$2" == repos/owner/repo/actions/runners ]]; then
+if [[ "$1" == api && "$2" == orgs/illuma-law/actions/runners ]]; then
   printf '42\n'
 elif [[ "$1" == api && "$2" == --method ]]; then
-  [[ "$3" == POST && "$4" == repos/owner/repo/actions/runners/remove-token ]] || exit 1
+  [[ "$3" == POST && "$4" == orgs/illuma-law/actions/runners/remove-token ]] || exit 1
   printf '%s\n' fixture-removal-token
 else
   exit 1
@@ -71,10 +97,7 @@ fi
 GH
 cat >"$tmp/bin/podman" <<'PODMAN'
 #!/usr/bin/env bash
-if [[ "$1" == exec ]]; then
-  [[ "$*" == *'/runner-data/state/.runner' ]] || exit 1
-  if [[ "$*" == *gitHubUrl* ]]; then printf 'https://github.com/owner/repo\n'; else printf 'lerd-test-desktop\n'; fi
-elif [[ "$1" == inspect ]]; then
+if [[ "$1" == inspect ]]; then
   printf 'ghcr.io/example/runner@sha256:fixture\n'
 elif [[ "$1" == run ]]; then
   [[ " $* " == *" --interactive "* ]] || exit 32
@@ -91,15 +114,18 @@ printf '%s\n' "$*" >>"$LERD_CALLS"
 LERD
 chmod +x "$tmp/bin/gh" "$tmp/bin/podman" "$tmp/bin/lerd"
 : >"$tmp/lerd-calls.log"
-mkdir -p "$tmp/data/lerd/data/github-actions-runner-test/state"
-printf '{"agentName":"lerd-test-desktop","gitHubUrl":"https://github.com/owner/repo"}\n' \
-  >"$tmp/data/lerd/data/github-actions-runner-test/state/.runner"
-PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_DATA_HOME="$tmp/data" LERD_CALLS="$tmp/lerd-calls.log" \
-  LERD_RUNNER_SERVICE=github-actions-runner-test LERD_RUNNER_WORKER=docker-test \
-  "$root/scripts/runnerctl" remove owner/repo >"$tmp/remove.out" 2>"$tmp/remove.err"
+mkdir -p "$tmp/data/lerd/data/gh-runner/state" "$tmp/config/lerd/services"
+printf '{"agentName":"lerd-gh-runner-local-linux","gitHubUrl":"https://github.com/illuma-law"}\n' \
+  >"$tmp/data/lerd/data/gh-runner/state/.runner"
+cat >"$tmp/config/lerd/services/gh-runner.yaml" <<'YAML'
+image: ghcr.io/example/runner@sha256:fixture
+YAML
+PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_DATA_HOME="$tmp/data" XDG_CONFIG_HOME="$tmp/config" LERD_CALLS="$tmp/lerd-calls.log" \
+  LERD_RUNNER_SERVICE=gh-runner LERD_RUNNER_WORKER=docker-gh-runner \
+  "$root/scripts/runnerctl" remove --org illuma-law >"$tmp/remove.out" 2>"$tmp/remove.err"
 [[ ! -s "$tmp/remove.out" && ! -s "$tmp/remove.err" ]]
-[[ "$(cat "$tmp/lerd-calls.log")" == $'worker stop docker-test\nservice stop github-actions-runner-test' ]]
-[[ -s "$tmp/data/lerd/data/github-actions-runner-test/state/.runner" ]]
+[[ "$(cat "$tmp/lerd-calls.log")" == $'worker stop docker-gh-runner\nservice stop gh-runner' ]]
+[[ -s "$tmp/data/lerd/data/gh-runner/state/.runner" ]]
 
 # A mismatched daemon identity must fail before any destructive Docker command.
 cat >"$tmp/bin/docker" <<'DOCKER'
@@ -203,6 +229,12 @@ if PATH="$tmp/bin:$PATH" PODMAN_CALLS="$tmp/podman-replace.log" PODMAN_STATE="$t
   exit 1
 fi
 grep -q -- '--network container:lerd-test' "$tmp/podman-replace.log"
+grep -q -- "--volume $tmp/data/lerd/data/test/_work:/runner-data/_work:z" "$tmp/podman-replace.log"
+grep -q -- "--volume $tmp/data/lerd/data/test/tmp:/runner-data/tmp:z" "$tmp/podman-replace.log"
+if grep -q -- "--volume $tmp/data/lerd/data/test:/runner-data" "$tmp/podman-replace.log"; then
+  echo 'sidecar exposed the runner registration directory' >&2
+  exit 1
+fi
 grep -q -- '--label lerd-runner-id=runner-old' "$tmp/podman-replace.log"
 grep -q -- '--label lerd-runner-id=runner-new' "$tmp/podman-replace.log"
 [[ $(grep -c '^run ' "$tmp/podman-replace.log") == 2 ]]
