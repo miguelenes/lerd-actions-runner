@@ -173,7 +173,7 @@ case "$1:$2" in
     case "$3" in
       *'{{.Id}}'*) [[ -f "$PODMAN_STATE/new-runner" ]] && printf runner-new || printf runner-old ;;
       *'{{.State.Running}}'*) printf true ;;
-      *'{{.Config.Labels.lerd-runner-id}}'*) cat "$PODMAN_STATE/sidecar-id" 2>/dev/null || true ;;
+      *'{{index .Config.Labels "lerd-runner-id"}}'*) cat "$PODMAN_STATE/sidecar-id" 2>/dev/null || true ;;
     esac
     ;;
   update:*) ;;

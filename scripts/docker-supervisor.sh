@@ -21,7 +21,7 @@ while :; do
       podman update --cpus "${LERD_RUNNER_CPUS:-4}" --memory "${LERD_RUNNER_MEMORY:-8g}" "$container"
       last_runner_id=$runner_id
     fi
-    if [[ "$(podman inspect --format '{{.State.Running}}' "$sidecar" 2>/dev/null || true)" != true || "$(podman inspect --format '{{.Config.Labels.lerd-runner-id}}' "$sidecar" 2>/dev/null || true)" != "$runner_id" ]]; then
+    if [[ "$(podman inspect --format '{{.State.Running}}' "$sidecar" 2>/dev/null || true)" != true || "$(podman inspect --format '{{index .Config.Labels "lerd-runner-id"}}' "$sidecar" 2>/dev/null || true)" != "$runner_id" ]]; then
       cleanup
       podman run --detach --privileged --name "$sidecar" --network "container:$container" \
         --hostname "$sidecar" --env DOCKER_TLS_CERTDIR= --label "lerd-runner-id=$runner_id" --volume "$daemon_data:/var/lib/docker:Z" \
