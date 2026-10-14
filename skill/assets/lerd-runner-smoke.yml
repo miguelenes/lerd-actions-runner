@@ -15,23 +15,40 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Check private Docker daemon
-        run: docker info
-      - name: Run Docker service probe
+      - name: Check private Docker daemon and localhost port publishing
         run: |
-          docker run --detach --rm --name lerd-smoke-web -p 127.0.0.1:18765:80 nginx:1.27-alpine
-          trap 'docker rm -f lerd-smoke-web >/dev/null 2>&1 || true' EXIT
+          docker info
+          docker network create lerd-smoke-net
+          docker volume create lerd-smoke-volume
+          docker run --detach --rm --name lerd-smoke-web --network lerd-smoke-net \
+            --volume lerd-smoke-volume:/smoke \
+            -p 127.0.0.1:18765:80 nginx:1.27-alpine
           for attempt in $(seq 1 30); do
             curl --fail --silent http://127.0.0.1:18765 >/dev/null && break
             sleep 1
           done
           docker inspect lerd-smoke-web --format '{{.State.Running}}' | grep -qx true
+          mkdir -p "$RUNNER_TOOL_CACHE/lerd-smoke"
+          printf 'tool cache survived job cleanup\n' >"$RUNNER_TOOL_CACHE/lerd-smoke/marker"
           printf 'private Docker job passed\n' >"$RUNNER_TEMP/lerd-runner-smoke.txt"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: lerd-runner-smoke
           path: ${{ runner.temp }}/lerd-runner-smoke.txt
+  cleanup-after-docker:
+    needs: docker
+    runs-on: [self-hosted, linux, x64, lerd-RUNNER_LABEL]
+    timeout-minutes: 10
+    steps:
+      - name: Confirm per-job cleanup and persistent tool cache
+        run: |
+          test -z "$(docker ps --quiet --all)"
+          test -z "$(docker network ls --quiet --filter type=custom)"
+          test -z "$(docker volume ls --quiet)"
+          test -s "$RUNNER_TOOL_CACHE/lerd-smoke/marker"
+          rm -rf "$RUNNER_TOOL_CACHE/lerd-smoke"
   services-and-container:
+    needs: cleanup-after-docker
     runs-on: [self-hosted, linux, x64, lerd-RUNNER_LABEL]
     timeout-minutes: 15
     container: alpine:3.21

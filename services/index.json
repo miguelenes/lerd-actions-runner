@@ -4,8 +4,8 @@
       "name": "github-actions-runner",
       "description": "Persistent self-hosted GitHub Actions runner for Lerd projects",
       "image": "ghcr.io/miguelenes/lerd-actions-runner:0.1.0",
-      "category": "development",
-      "icon": "github",
+      "category": "testing",
+      "icon": "gear",
       "color": "#6e40c9"
     }
   ]

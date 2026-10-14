@@ -6,6 +6,6 @@ chown_data: true
 userns: "keep-id:uid=1001,gid=1001"
 environment:
   RUNNER_LABELS: lerd
-category: development
-icon: github
-color: "#6e40c9"
+category: testing
+icon: gear
+color: '#6e40c9'

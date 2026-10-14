@@ -1,0 +1,10 @@
+name: github-actions-runner-RUNNER_SITE
+description: GitHub Actions runner for RUNNER_REPOSITORY in RUNNER_SITE
+image: ghcr.io/miguelenes/lerd-actions-runner:0.1.0
+data_dir: /runner-data
+chown_data: true
+userns: keep-id:uid=1001,gid=1001
+environment:
+  RUNNER_URL: https://github.com/RUNNER_REPOSITORY
+  RUNNER_NAME: lerd-RUNNER_SITE-RUNNER_MACHINE
+  RUNNER_LABELS: lerd,lerd-RUNNER_SITE
