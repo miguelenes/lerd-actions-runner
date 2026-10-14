@@ -29,6 +29,6 @@ Supports Linux x64, rootless Podman, systemd user services, and trusted private 
 
 - Run `scripts/runnerctl status` from the Lerd site root. Set `LERD_RUNNER_SERVICE` and `LERD_RUNNER_WORKER` for site-specific names.
 - `scripts/runnerctl start|stop` controls that site's service and worker. A worker restart detects a recreated runner container and rebuilds only its Docker sidecar; persistent registration, Docker data, and tool cache remain.
-- Job cleanup acts only after confirming loopback Docker and the expected `lerd-actions-runner-*` daemon hostname. It removes that private daemon's job containers, networks, volumes, temporary data, and checked workspace, retaining the tool cache and images newer than seven days.
+- Job cleanup acts only after confirming loopback Docker, the expected `lerd-actions-runner-*` daemon hostname, and canonical paths within the runner data/work roots. It removes that private daemon's job containers, networks, volumes, job temp files, temporary data, and checked workspace, retaining the tool cache and images newer than seven days.
 - Revoke the GitHub runner registration first when removing it. Stop its worker and service; preserve local data by default. Delete the service data directory only after explicit request to remove runner credentials and workspace.
 - Never run untrusted pull requests, forks, or `pull_request_target` jobs on the persistent runner.

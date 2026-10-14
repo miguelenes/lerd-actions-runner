@@ -4,7 +4,8 @@ set +x
 readonly state=/runner-data/state
 readonly work=/runner-data/_work
 readonly runner_files=(.runner .credentials .credentials_rsaparams)
-mkdir -p "$state" "$work" /runner-data/tmp
+mkdir -p "$state" "$work" /runner-data/tmp /runner-data/_toolcache
+export RUNNER_TOOL_CACHE=/runner-data/_toolcache
 for name in "${runner_files[@]}"; do
   if [[ -e "$state/$name" && ! -e "/opt/actions-runner/$name" ]]; then ln -s "$state/$name" "/opt/actions-runner/$name"; fi
 done

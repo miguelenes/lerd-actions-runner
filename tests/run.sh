@@ -69,4 +69,95 @@ if PATH="$tmp/bin:$PATH" DOCKER_CALLS="$tmp/docker.log" \
 fi
 if rg -q '^(rm|network rm|volume rm|image prune)' "$tmp/docker.log"; then echo 'cleanup ran a destructive command' >&2; exit 1; fi
 
+# Cleanup removes only workspace/temp data under the runner data root and keeps the tool cache.
+cleanup_data="$tmp/runner-data"
+mkdir -p "$cleanup_data/_work/job-1" "$cleanup_data/_work/_temp" "$cleanup_data/_toolcache" "$cleanup_data/tmp" "$tmp/outside"
+printf x >"$cleanup_data/_work/job-1/workspace-file"
+printf x >"$cleanup_data/_work/_temp/temp-file"
+printf x >"$cleanup_data/tmp/temp-file"
+printf x >"$cleanup_data/_toolcache/cache-file"
+printf x >"$tmp/outside/keep-file"
+cat >"$tmp/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$DOCKER_CALLS"
+case "$1" in
+  info) printf '%s\n' lerd-actions-runner-test ;;
+  ps|network|volume) ;;
+  *) ;;
+esac
+DOCKER
+chmod +x "$tmp/bin/docker"
+: >"$tmp/docker-safe.log"
+PATH="$tmp/bin:$PATH" DOCKER_CALLS="$tmp/docker-safe.log" DOCKER_HOST=tcp://127.0.0.1:2375 \
+  LERD_RUNNER_DATA_ROOT="$cleanup_data" GITHUB_WORKSPACE="$cleanup_data/_work/job-1" \
+  "$root/image/job-cleanup.sh"
+[[ ! -e "$cleanup_data/_work/job-1/workspace-file" && ! -e "$cleanup_data/_work/_temp/temp-file" && ! -e "$cleanup_data/tmp/temp-file" ]]
+[[ -e "$cleanup_data/_toolcache/cache-file" && -e "$tmp/outside/keep-file" ]]
+
+# A traversal workspace fails before the private Docker daemon is asked to remove anything.
+: >"$tmp/docker-boundary.log"
+if PATH="$tmp/bin:$PATH" DOCKER_CALLS="$tmp/docker-boundary.log" DOCKER_HOST=tcp://127.0.0.1:2375 \
+  LERD_RUNNER_DATA_ROOT="$cleanup_data" GITHUB_WORKSPACE="$cleanup_data/_work/../_toolcache" \
+  "$root/image/job-cleanup.sh" >/dev/null 2>&1; then
+  echo "cleanup accepted a workspace outside the work root" >&2
+  exit 1
+fi
+if rg -q '^(rm|network rm|volume rm|image prune)' "$tmp/docker-boundary.log"; then
+  echo 'cleanup made Docker changes before validating workspace boundaries' >&2
+  exit 1
+fi
+
+# A job-controlled symlink at the runner temp path is rejected before cleanup.
+rmdir "$cleanup_data/_work/_temp"
+ln -s "$tmp/outside" "$cleanup_data/_work/_temp"
+: >"$tmp/docker-symlink.log"
+if PATH="$tmp/bin:$PATH" DOCKER_CALLS="$tmp/docker-symlink.log" DOCKER_HOST=tcp://127.0.0.1:2375 \
+  LERD_RUNNER_DATA_ROOT="$cleanup_data" "$root/image/job-cleanup.sh" >/dev/null 2>&1; then
+  echo "cleanup accepted a symlinked temp path" >&2
+  exit 1
+fi
+if rg -q '^(rm|network rm|volume rm|image prune)' "$tmp/docker-symlink.log"; then
+  echo 'cleanup made Docker changes before validating temp path boundaries' >&2
+  exit 1
+fi
+
+# A changed runner container id forces the Docker sidecar back into the new namespace.
+cat >"$tmp/bin/podman" <<'PODMAN'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$PODMAN_CALLS"
+case "$1:$2" in
+  info:*) printf true ;;
+  inspect:*)
+    case "$3" in
+      *'{{.Id}}'*) [[ -f "$PODMAN_STATE/new-runner" ]] && printf runner-new || printf runner-old ;;
+      *'{{.State.Running}}'*) printf true ;;
+      *'{{.Config.Labels.lerd-runner-id}}'*) cat "$PODMAN_STATE/sidecar-id" 2>/dev/null || true ;;
+    esac
+    ;;
+  update:*) ;;
+  rm:*) rm -f "$PODMAN_STATE/sidecar-id" ;;
+  run:*)
+    for arg in "$@"; do
+      case "$arg" in lerd-runner-id=*) printf '%s' "${arg#*=}" >"$PODMAN_STATE/sidecar-id";; esac
+    done
+    ;;
+esac
+PODMAN
+cat >"$tmp/bin/sleep" <<'SLEEP'
+#!/usr/bin/env bash
+if [[ ! -e "$PODMAN_STATE/new-runner" ]]; then touch "$PODMAN_STATE/new-runner"; else /bin/sleep 0.05; fi
+SLEEP
+chmod +x "$tmp/bin/podman" "$tmp/bin/sleep"
+mkdir -p "$tmp/podman-state"
+if PATH="$tmp/bin:$PATH" PODMAN_CALLS="$tmp/podman-replace.log" PODMAN_STATE="$tmp/podman-state" \
+  HOME="$tmp/home" XDG_DATA_HOME="$tmp/data" LERD_RUNNER_NAME=test \
+  timeout 0.5s "$root/scripts/docker-supervisor.sh" >/dev/null 2>&1; then
+  echo "supervisor unexpectedly exited without its timeout" >&2
+  exit 1
+fi
+grep -q -- '--network container:lerd-test' "$tmp/podman-replace.log"
+grep -q -- '--label lerd-runner-id=runner-old' "$tmp/podman-replace.log"
+grep -q -- '--label lerd-runner-id=runner-new' "$tmp/podman-replace.log"
+[[ $(rg -c '^run ' "$tmp/podman-replace.log") == 2 ]]
+
 echo "runner template checks passed"
