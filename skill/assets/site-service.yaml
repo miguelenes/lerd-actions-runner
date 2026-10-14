@@ -1,6 +1,6 @@
 name: github-actions-runner-RUNNER_SITE
 description: GitHub Actions runner for RUNNER_REPOSITORY in RUNNER_SITE
-image: ghcr.io/miguelenes/lerd-actions-runner:0.1.0
+image: ghcr.io/miguelenes/lerd-actions-runner:0.1.0@sha256:99a52f5eb80c0de478462881d60f9cece7de69ac8c8be8ebc13f2dba395abe4d
 data_dir: /runner-data
 chown_data: true
 userns: keep-id:uid=1001,gid=1001
