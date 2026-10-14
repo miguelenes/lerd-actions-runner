@@ -1,0 +1,11 @@
+name: github-actions-runner
+description: Persistent self-hosted GitHub Actions runner for Lerd projects
+image: ghcr.io/miguelenes/lerd-actions-runner:0.1.0
+data_dir: /runner-data
+chown_data: true
+userns: "keep-id:uid=1001,gid=1001"
+environment:
+  RUNNER_LABELS: lerd
+category: development
+icon: github
+color: "#6e40c9"

@@ -1,0 +1,55 @@
+name: Lerd runner smoke
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lerd-runner-smoke-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  docker:
+    runs-on: [self-hosted, linux, x64, lerd-RUNNER_LABEL]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check private Docker daemon
+        run: docker info
+      - name: Run Docker service probe
+        run: |
+          docker run --detach --rm --name lerd-smoke-web -p 127.0.0.1:18765:80 nginx:1.27-alpine
+          trap 'docker rm -f lerd-smoke-web >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:18765 >/dev/null && break
+            sleep 1
+          done
+          docker inspect lerd-smoke-web --format '{{.State.Running}}' | grep -qx true
+          printf 'private Docker job passed\n' >"$RUNNER_TEMP/lerd-runner-smoke.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lerd-runner-smoke
+          path: ${{ runner.temp }}/lerd-runner-smoke.txt
+  services-and-container:
+    runs-on: [self-hosted, linux, x64, lerd-RUNNER_LABEL]
+    timeout-minutes: 15
+    container: alpine:3.21
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Check service DNS and container job
+        run: |
+          apk add --no-cache redis
+          redis-cli -h redis ping | grep -qx PONG
+          printf 'container job with workflow services passed\n' > result.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lerd-container-service-smoke
+          path: result.txt

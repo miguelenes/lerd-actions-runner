@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+set +x
+readonly service="${LERD_RUNNER_SERVICE:-github-actions-runner}"
+readonly container="lerd-${service}"
+readonly worker="${LERD_RUNNER_WORKER:-docker}"
+trap 'unset token' EXIT
+usage() { printf 'Usage: %s {status|register OWNER/REPO|start|stop}\n' "$0" >&2; exit 2; }
+case "${1:-}" in
+  status)
+    lerd service list
+    lerd worker list
+    podman ps --filter "name=$container" --format '{{.Names}} {{.Status}}'
+    podman ps --filter 'name=lerd-actions-runner-' --format '{{.Names}} {{.Status}}'
+    ;;
+  register)
+    [[ $# == 2 ]] || usage
+    if ! command -v gh >/dev/null; then echo "gh is required; authenticate it for the repository first" >&2; exit 2; fi
+    gh auth status >/dev/null
+    owner_repo=$2
+    [[ "$owner_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || usage
+    token=$(gh api --method POST "repos/$owner_repo/actions/runners/registration-token" --jq .token)
+    [[ -n "$token" ]] || { echo "GitHub returned no registration token" >&2; exit 1; }
+    if ! printf '%s\n' "$token" | podman exec --interactive "$container" /usr/local/bin/lerd-runner-entrypoint register >/dev/null 2>&1; then echo "runner registration failed; inspect Lerd service logs" >&2; exit 1; fi
+    unset token
+    ;;
+  start) lerd service start "$service"; lerd worker start "$worker" ;;
+  stop) lerd worker stop "$worker"; lerd service stop "$service" ;;
+  *) usage ;;
+esac
