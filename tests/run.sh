@@ -54,6 +54,47 @@ PATH="$tmp/bin:$PATH" EXPECTED_TOKEN=fixture-registration-token \
   "$root/scripts/runnerctl" register owner/repo >"$tmp/register.out" 2>"$tmp/register.err"
 [[ ! -s "$tmp/register.out" && ! -s "$tmp/register.err" ]]
 
+# Removal requires a matching registered runner, streams its short-lived token,
+# stops the Lerd units, and leaves the local data volumes intact.
+cat >"$tmp/bin/gh" <<'GH'
+#!/usr/bin/env bash
+[[ "$1" == auth ]] && exit 0
+if [[ "$1" == api && "$2" == repos/owner/repo/actions/runners ]]; then
+  printf '42\n'
+elif [[ "$1" == api && "$2" == --method ]]; then
+  [[ "$3" == POST && "$4" == repos/owner/repo/actions/runners/remove-token ]] || exit 1
+  printf '%s\n' fixture-removal-token
+else
+  exit 1
+fi
+GH
+cat >"$tmp/bin/podman" <<'PODMAN'
+#!/usr/bin/env bash
+if [[ "$1" == exec ]]; then
+  [[ "$*" == *'/runner-data/state/.runner' ]] || exit 1
+  if [[ "$*" == *serverUrl* ]]; then printf 'https://github.com/owner/repo\n'; else printf 'lerd-test-desktop\n'; fi
+elif [[ "$1" == inspect ]]; then
+  printf 'ghcr.io/example/runner@sha256:fixture\n'
+elif [[ "$1" == run ]]; then
+  for arg in "$@"; do [[ "$arg" == fixture-removal-token ]] && exit 31; done
+  read -r incoming
+  [[ "$incoming" == fixture-removal-token ]]
+else
+  exit 1
+fi
+PODMAN
+cat >"$tmp/bin/lerd" <<'LERD'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$LERD_CALLS"
+LERD
+chmod +x "$tmp/bin/gh" "$tmp/bin/podman" "$tmp/bin/lerd"
+: >"$tmp/lerd-calls.log"
+PATH="$tmp/bin:$PATH" LERD_CALLS="$tmp/lerd-calls.log" \
+  LERD_RUNNER_SERVICE=github-actions-runner-test LERD_RUNNER_WORKER=docker-test \
+  "$root/scripts/runnerctl" remove owner/repo >"$tmp/remove.out" 2>"$tmp/remove.err"
+[[ ! -s "$tmp/remove.out" && ! -s "$tmp/remove.err" ]]
+[[ "$(cat "$tmp/lerd-calls.log")" == $'worker stop docker-test\nservice stop github-actions-runner-test' ]]
+
 # A mismatched daemon identity must fail before any destructive Docker command.
 cat >"$tmp/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash

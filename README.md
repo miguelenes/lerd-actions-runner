@@ -25,6 +25,11 @@ mounts the host Docker or Podman socket. Do not run untrusted code on this runne
 Stop the Lerd worker to pause jobs. Do not remove service data unless you intend
 to remove runner credentials and workspace.
 
+Use `scripts/runnerctl remove <owner>/<repo>` from the project root to revoke
+the matching GitHub registration and remove its local runner credentials. The
+workspace and private Docker data remain in place; purge them separately only
+when explicitly requested.
+
 The runner image is built from the official Actions runner release with its
 release SHA-256 verified before extraction. Pull requests build without
 publishing. Publish is manually dispatched. Update the service-store preset

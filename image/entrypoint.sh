@@ -26,6 +26,16 @@ if [[ "${1:-run}" == register ]]; then
   echo "runner registration saved in its private service volume"
   exit 0
 fi
+if [[ "${1:-run}" == remove ]]; then
+  [[ -f "$state/.runner" ]] || { echo "runner is not registered" >&2; exit 2; }
+  IFS= read -r token || true
+  [[ -n "${token:-}" ]] || { echo "removal token is required on stdin" >&2; exit 2; }
+  ./config.sh remove --unattended --token "$token" >/dev/null
+  unset token
+  rm -f -- "$state/.runner" "$state/.credentials" "$state/.credentials_rsaparams"
+  echo "runner registration removed; workspace and tool cache retained"
+  exit 0
+fi
 while :; do
   registered=true
   for name in "${runner_files[@]}"; do

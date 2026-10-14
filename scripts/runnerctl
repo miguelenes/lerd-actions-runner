@@ -5,7 +5,7 @@ readonly service="${LERD_RUNNER_SERVICE:-github-actions-runner}"
 readonly container="lerd-${service}"
 readonly worker="${LERD_RUNNER_WORKER:-docker}"
 trap 'unset token' EXIT
-usage() { printf 'Usage: %s {status|register OWNER/REPO|start|stop}\n' "$0" >&2; exit 2; }
+usage() { printf 'Usage: %s {status|register OWNER/REPO|remove OWNER/REPO|start|stop}\n' "$0" >&2; exit 2; }
 case "${1:-}" in
   status)
     lerd service list
@@ -22,6 +22,30 @@ case "${1:-}" in
     token=$(gh api --method POST "repos/$owner_repo/actions/runners/registration-token" --jq .token)
     [[ -n "$token" ]] || { echo "GitHub returned no registration token" >&2; exit 1; }
     if ! printf '%s\n' "$token" | podman exec --interactive "$container" /usr/local/bin/lerd-runner-entrypoint register >/dev/null 2>&1; then echo "runner registration failed; inspect Lerd service logs" >&2; exit 1; fi
+    unset token
+    ;;
+  remove)
+    [[ $# == 2 ]] || usage
+    if ! command -v gh >/dev/null; then echo "gh is required; authenticate it for the repository first" >&2; exit 2; fi
+    gh auth status >/dev/null
+    owner_repo=$2
+    [[ "$owner_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || usage
+    runner_name=$(podman exec "$container" jq -r '.agentName' /runner-data/state/.runner 2>/dev/null)
+    [[ -n "$runner_name" && "$runner_name" != null ]] || { echo "runner registration is missing; refusing removal" >&2; exit 1; }
+    server_url=$(podman exec "$container" jq -r '.serverUrl' /runner-data/state/.runner 2>/dev/null)
+    [[ "${server_url%/}" == "https://github.com/$owner_repo" ]] || { echo "local runner belongs to another repository; refusing removal" >&2; exit 1; }
+    runner_id=$(gh api "repos/$owner_repo/actions/runners" --jq ".runners[] | select(.name == \"$runner_name\") | .id" 2>/dev/null)
+    [[ -n "$runner_id" ]] || { echo "matching GitHub runner was not found; refusing removal" >&2; exit 1; }
+    token=$(gh api --method POST "repos/$owner_repo/actions/runners/remove-token" --jq .token)
+    [[ -n "$token" ]] || { echo "GitHub returned no removal token" >&2; exit 1; }
+    image=$(podman inspect --format '{{.ImageName}}' "$container")
+    [[ -n "$image" ]] || { echo "runner service image could not be determined" >&2; exit 1; }
+    lerd worker stop "$worker"
+    lerd service stop "$service"
+    if ! printf '%s\n' "$token" | podman run --rm --network lerd --volumes-from "$container" --entrypoint /usr/local/bin/lerd-runner-entrypoint "$image" remove >/dev/null 2>&1; then
+      echo "runner removal failed; inspect Lerd service logs and GitHub runner inventory" >&2
+      exit 1
+    fi
     unset token
     ;;
   start) lerd service start "$service"; lerd worker start "$worker" ;;
