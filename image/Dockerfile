@@ -19,7 +19,7 @@ RUN set -eu; archive="actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"; \
     tar -xzf "/tmp/${archive}" -C /opt/actions-runner; rm "/tmp/${archive}"; \
     chown -R runner:runner /opt/actions-runner
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/lerd-runner-entrypoint
-COPY --chmod=0755 job-cleanup.sh /usr/local/bin/lerd-runner-job-cleanup
+COPY --chmod=0755 job-cleanup.sh /usr/local/bin/lerd-runner-job-cleanup.sh
 USER runner
 WORKDIR /opt/actions-runner
 ENV RUNNER_WORKDIR=/runner-data/_work DOCKER_HOST=tcp://127.0.0.1:2375

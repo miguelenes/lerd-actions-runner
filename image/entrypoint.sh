@@ -47,8 +47,8 @@ while :; do
   fi
   sleep 15
 done
-export ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/bin/lerd-runner-job-cleanup
-export ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/usr/local/bin/lerd-runner-job-cleanup
+export ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/bin/lerd-runner-job-cleanup.sh
+export ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/usr/local/bin/lerd-runner-job-cleanup.sh
 for _ in $(seq 1 90); do
   if docker info >/dev/null 2>&1; then exec ./run.sh; fi
   sleep 2

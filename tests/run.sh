@@ -6,6 +6,7 @@ trap 'rm -rf -- "$tmp"' EXIT
 if grep -Eq -- '--replace' "$root/scripts/runnerctl"; then exit 1; fi
 if grep -q 'REGISTRATION_TOKEN' "$root/services/github-actions-runner.yaml"; then exit 1; fi
 grep -q "tcp://127.0.0.1:2375" "$root/image/Dockerfile"
+grep -q 'ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/usr/local/bin/lerd-runner-job-cleanup.sh' "$root/image/entrypoint.sh"
 grep -q 'lerd-actions-runner-' "$root/image/job-cleanup.sh"
 python3 - "$root" <<'PY'
 import json, pathlib, sys
