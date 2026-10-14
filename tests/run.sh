@@ -73,10 +73,11 @@ cat >"$tmp/bin/podman" <<'PODMAN'
 #!/usr/bin/env bash
 if [[ "$1" == exec ]]; then
   [[ "$*" == *'/runner-data/state/.runner' ]] || exit 1
-  if [[ "$*" == *serverUrl* ]]; then printf 'https://github.com/owner/repo\n'; else printf 'lerd-test-desktop\n'; fi
+  if [[ "$*" == *gitHubUrl* ]]; then printf 'https://github.com/owner/repo\n'; else printf 'lerd-test-desktop\n'; fi
 elif [[ "$1" == inspect ]]; then
   printf 'ghcr.io/example/runner@sha256:fixture\n'
 elif [[ "$1" == run ]]; then
+  [[ " $* " == *" --interactive "* ]] || exit 32
   for arg in "$@"; do [[ "$arg" == fixture-removal-token ]] && exit 31; done
   read -r incoming
   [[ "$incoming" == fixture-removal-token ]]
@@ -90,11 +91,15 @@ printf '%s\n' "$*" >>"$LERD_CALLS"
 LERD
 chmod +x "$tmp/bin/gh" "$tmp/bin/podman" "$tmp/bin/lerd"
 : >"$tmp/lerd-calls.log"
-PATH="$tmp/bin:$PATH" LERD_CALLS="$tmp/lerd-calls.log" \
+mkdir -p "$tmp/data/lerd/data/github-actions-runner-test/state"
+printf '{"agentName":"lerd-test-desktop","gitHubUrl":"https://github.com/owner/repo"}\n' \
+  >"$tmp/data/lerd/data/github-actions-runner-test/state/.runner"
+PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_DATA_HOME="$tmp/data" LERD_CALLS="$tmp/lerd-calls.log" \
   LERD_RUNNER_SERVICE=github-actions-runner-test LERD_RUNNER_WORKER=docker-test \
   "$root/scripts/runnerctl" remove owner/repo >"$tmp/remove.out" 2>"$tmp/remove.err"
 [[ ! -s "$tmp/remove.out" && ! -s "$tmp/remove.err" ]]
 [[ "$(cat "$tmp/lerd-calls.log")" == $'worker stop docker-test\nservice stop github-actions-runner-test' ]]
+[[ -s "$tmp/data/lerd/data/github-actions-runner-test/state/.runner" ]]
 
 # A mismatched daemon identity must fail before any destructive Docker command.
 cat >"$tmp/bin/docker" <<'DOCKER'

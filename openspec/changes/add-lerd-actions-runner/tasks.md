@@ -9,6 +9,6 @@
 
 - [x] Define the service preset and per-site service template.
 - [x] Write the `lerd-add-actions-runner` skill and manual smoke workflow.
-- [ ] Publish a versioned runner image and pin its digest in the service store.
-- [ ] Add the service-store preset and open its draft pull request.
-- [ ] Run a manual smoke workflow on a separately registered Lerd test site and record actual GitHub status.
+- [x] Publish runner image `0.1.2` and pin digest `sha256:d0cee9301e5b61c6d07e15e418df9796e040bedfb44e8b91fffa6c12d755be4d` in the service store.
+- [x] Add the service-store preset and open draft pull request [lerd-env/services#44](https://github.com/lerd-env/services/pull/44).
+- [x] Run manual smoke workflow `38615198572` on isolated Lerd site `lerd-actions-runner-validation`; verify job cleanup, tool-cache persistence, Docker commands, host-local workflow service, container job/service, bind mount, artifact upload, and runner removal.
