@@ -15,6 +15,6 @@
 
 ## Shared organization runner follow-up
 
-- [ ] Reconcile the validation service to one short-named shared `gh-runner` instance.
+- [x] Reconcile the validation service to one short-named shared `gh-runner` instance.
 - [ ] Register at `illuma-law` organization scope in a selected-only group for trusted private repositories.
-- [ ] Update the skill, manual workflow asset, and service-store documentation to describe the shared runner.
+- [x] Update the skill, manual workflow asset, and service-store documentation to describe the shared runner.
