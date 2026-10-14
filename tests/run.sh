@@ -218,14 +218,20 @@ esac
 PODMAN
 cat >"$tmp/bin/sleep" <<'SLEEP'
 #!/usr/bin/env bash
-if [[ ! -e "$PODMAN_STATE/new-runner" ]]; then touch "$PODMAN_STATE/new-runner"; else /bin/sleep 0.05; fi
+if [[ ! -e "$PODMAN_STATE/new-runner" ]]; then
+  touch "$PODMAN_STATE/new-runner"
+elif [[ ! -e "$PODMAN_STATE/replacement-seen" ]]; then
+  touch "$PODMAN_STATE/replacement-seen"
+else
+  exit 1
+fi
 SLEEP
 chmod +x "$tmp/bin/podman" "$tmp/bin/sleep"
 mkdir -p "$tmp/podman-state"
 if PATH="$tmp/bin:$PATH" PODMAN_CALLS="$tmp/podman-replace.log" PODMAN_STATE="$tmp/podman-state" \
   HOME="$tmp/home" XDG_DATA_HOME="$tmp/data" LERD_RUNNER_NAME=test \
-  timeout 0.5s "$root/scripts/docker-supervisor.sh" >/dev/null 2>&1; then
-  echo "supervisor unexpectedly exited without its timeout" >&2
+  "$root/scripts/docker-supervisor.sh" >/dev/null 2>&1; then
+  echo "supervisor unexpectedly continued after the replacement fixture ended" >&2
   exit 1
 fi
 grep -q -- '--network container:lerd-test' "$tmp/podman-replace.log"
