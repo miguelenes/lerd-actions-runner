@@ -7,8 +7,9 @@ targets Linux x64, rootless Podman, systemd user services, and trusted private r
 Install and deploy the `lerd-add-actions-runner` skill from this repository, then
 invoke it in one Lerd host project. It installs the single `gh-runner` service and
 host worker, registers the runner with the GitHub organization, and adds only
-explicitly selected private repositories to a restricted runner group. Existing
-workflows stay as they are; each repo opts in with the `lerd-<org>` runner label.
+explicitly selected private repositories to a restricted runner group. The one
+runner processes one job at a time. Existing workflows stay as they are; each
+repo opts in with the `lerd-<org>` runner label.
 
 The service has no ports and stores runner credentials and job state in
 `~/.local/share/lerd/data/gh-runner/`. The short lived registration

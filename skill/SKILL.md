@@ -5,7 +5,7 @@ description: Add, inspect, or remove the shared organization GitHub Actions runn
 
 # Manage the shared Lerd Actions runner
 
-Supports Linux x64, rootless Podman, systemd user services, and trusted private GitHub organization repositories. Install one shared `gh-runner` service on the Lerd host; repositories in its private `lerd-private` runner group can target it with `runs-on: [self-hosted, lerd-<org>]`. Existing workflows remain unchanged unless a maintainer opts them in.
+Supports Linux x64, rootless Podman, systemd user services, and trusted private GitHub organization repositories. Install one shared `gh-runner` service on the Lerd host; repositories in its private `lerd-private` runner group can target it with `runs-on: [self-hosted, lerd-<org>]`. The shared runner processes one job at a time, so other repositories' jobs wait while it is busy. Existing workflows remain unchanged unless a maintainer opts them in.
 
 ## Discover and install
 
