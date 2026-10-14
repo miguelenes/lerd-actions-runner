@@ -1,6 +1,6 @@
 # Runner service and runtime
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Persistent repository runner
 The template SHALL provide a versioned Linux x64 GitHub Actions runner image with its upstream release archive verified by SHA-256. A Lerd service SHALL persist runner registration and job state without publishing service ports or storing a registration token.

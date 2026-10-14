@@ -1,6 +1,6 @@
 # Lerd runner setup skill
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Site-scoped runner setup
 The skill SHALL discover Lerd sites and workers, resolve the GitHub origin, and configure a uniquely named service and host worker without replacing unrelated project settings.
@@ -18,3 +18,14 @@ The skill SHALL obtain repository-scoped registration through the operator's aut
 
 ### Requirement: Opt-in validation workflow
 The skill SHALL add a manual smoke workflow when absent, using a site-specific runner label and SHA-pinned actions, without changing existing CI workflows.
+
+#### Scenario: Smoke workflow stays opt-in
+- **WHEN** the skill installs its validation workflow
+- **THEN** the workflow runs only on `workflow_dispatch` and existing CI routing remains unchanged
+
+### Requirement: Safe runner removal
+The skill SHALL revoke the matching GitHub runner registration before removing local runner credentials, and preserve work, tool-cache, and Docker data unless the operator explicitly requests a purge.
+
+#### Scenario: Runner registration is removed
+- **WHEN** the operator removes a configured runner
+- **THEN** GitHub no longer lists it and local work, tool-cache, and Docker data remain available
