@@ -67,7 +67,7 @@ if PATH="$tmp/bin:$PATH" DOCKER_CALLS="$tmp/docker.log" \
   echo "cleanup accepted an unexpected daemon" >&2
   exit 1
 fi
-if rg -q '^(rm|network rm|volume rm|image prune)' "$tmp/docker.log"; then echo 'cleanup ran a destructive command' >&2; exit 1; fi
+if grep -Eq '^(rm|network rm|volume rm|image prune)' "$tmp/docker.log"; then echo 'cleanup ran a destructive command' >&2; exit 1; fi
 
 # Cleanup removes only workspace/temp data under the runner data root and keeps the tool cache.
 cleanup_data="$tmp/runner-data"
@@ -102,7 +102,7 @@ if PATH="$tmp/bin:$PATH" DOCKER_CALLS="$tmp/docker-boundary.log" DOCKER_HOST=tcp
   echo "cleanup accepted a workspace outside the work root" >&2
   exit 1
 fi
-if rg -q '^(rm|network rm|volume rm|image prune)' "$tmp/docker-boundary.log"; then
+if grep -Eq '^(rm|network rm|volume rm|image prune)' "$tmp/docker-boundary.log"; then
   echo 'cleanup made Docker changes before validating workspace boundaries' >&2
   exit 1
 fi
@@ -116,7 +116,7 @@ if PATH="$tmp/bin:$PATH" DOCKER_CALLS="$tmp/docker-symlink.log" DOCKER_HOST=tcp:
   echo "cleanup accepted a symlinked temp path" >&2
   exit 1
 fi
-if rg -q '^(rm|network rm|volume rm|image prune)' "$tmp/docker-symlink.log"; then
+if grep -Eq '^(rm|network rm|volume rm|image prune)' "$tmp/docker-symlink.log"; then
   echo 'cleanup made Docker changes before validating temp path boundaries' >&2
   exit 1
 fi
@@ -158,6 +158,6 @@ fi
 grep -q -- '--network container:lerd-test' "$tmp/podman-replace.log"
 grep -q -- '--label lerd-runner-id=runner-old' "$tmp/podman-replace.log"
 grep -q -- '--label lerd-runner-id=runner-new' "$tmp/podman-replace.log"
-[[ $(rg -c '^run ' "$tmp/podman-replace.log") == 2 ]]
+[[ $(grep -c '^run ' "$tmp/podman-replace.log") == 2 ]]
 
 echo "runner template checks passed"
