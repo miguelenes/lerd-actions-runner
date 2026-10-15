@@ -6,6 +6,6 @@ chown_data: true
 userns: keep-id:uid=1001,gid=1001
 environment:
   RUNNER_URL: https://github.com/RUNNER_ORG
-  RUNNER_NAME: lerd-gh-runner-RUNNER_MACHINE
+  RUNNER_NAME: gh-RUNNER_MACHINE
   RUNNER_LABELS: lerd,lerd-RUNNER_ORG
   RUNNER_GROUP: lerd-private

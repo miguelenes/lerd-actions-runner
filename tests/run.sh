@@ -24,6 +24,11 @@ PY
 mkdir -p "$tmp/bin"
 output="$tmp/github-actions-runner-test.yaml"
 "$root/scripts/render-site-service.sh" illuma-law local-linux "$output" >/dev/null
+grep -q 'RUNNER_NAME: gh-local-linux' "$output"
+if grep -q 'RUNNER_NAME: lerd-gh-runner-' "$output"; then
+  echo "renderer generated an unnecessarily long GitHub runner name" >&2
+  exit 1
+fi
 before=$(sha256sum "$output")
 "$root/scripts/render-site-service.sh" illuma-law local-linux "$output" >/dev/null
 [[ "$before" == "$(sha256sum "$output")" ]]
@@ -70,7 +75,7 @@ chmod +x "$tmp/bin/gh" "$tmp/bin/podman"
 mkdir -p "$tmp/config/lerd/services"
 cat >"$tmp/config/lerd/services/gh-runner.yaml" <<'YAML'
 environment:
-  RUNNER_NAME: lerd-gh-runner-local-linux
+  RUNNER_NAME: gh-local-linux
 YAML
 : >"$tmp/gh-calls.log"
 PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/config" GH_CALLS="$tmp/gh-calls.log" \
@@ -115,7 +120,7 @@ LERD
 chmod +x "$tmp/bin/gh" "$tmp/bin/podman" "$tmp/bin/lerd"
 : >"$tmp/lerd-calls.log"
 mkdir -p "$tmp/data/lerd/data/gh-runner/state" "$tmp/config/lerd/services"
-printf '{"agentName":"lerd-gh-runner-local-linux","gitHubUrl":"https://github.com/illuma-law"}\n' \
+printf '{"agentName":"gh-local-linux","gitHubUrl":"https://github.com/illuma-law"}\n' \
   >"$tmp/data/lerd/data/gh-runner/state/.runner"
 cat >"$tmp/config/lerd/services/gh-runner.yaml" <<'YAML'
 image: ghcr.io/example/runner@sha256:fixture
